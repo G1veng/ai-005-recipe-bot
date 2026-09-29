@@ -6,7 +6,8 @@ import difflib
 import html
 from dataclasses import dataclass, field
 
-from .catalog import CATEGORY_NAMES, Catalog, Recipe, SOURCE, SOURCE_URL, LICENSE_URL
+from .catalog import (CATEGORY_NAMES, Catalog, Recipe, SOURCE, SOURCE_URL, LICENSE_URL,
+                      ingredient_key, is_pantry, normalize)
 
 
 PAGE_SIZE = 10
@@ -89,6 +90,17 @@ class Bot:
         rows.append([("⬅ Назад", "b:categories"), ("🏠 Домой", "home")])
         return keyboard(rows)
 
+    def _suggestion_line(self, index: int, recipe: Recipe, available: set[str]) -> str:
+        present, missing = [], []
+        for item in recipe.ingredients:
+            name = safe(item["name"]["ru"])
+            if is_pantry(item) or ingredient_key(item) in available:
+                present.append((normalize(item["name"]["ru"]), f"<b>{name}</b>"))
+            else:
+                missing.append((normalize(item["name"]["ru"]), name))
+        names = [name for _, name in sorted(present) + sorted(missing)]
+        return f"{index}. {safe(recipe.name)} — " + ", ".join(names)
+
     def _show_results(self, chat_id: int, session: Session, category: str) -> None:
         session.category = category
         session.results = self.catalog.find(session.selected, category)[:5]
@@ -103,15 +115,18 @@ class Bot:
         suggestions = self.catalog.suggest(session.selected, category)[:5]
         if suggestions:
             session.results = [recipe for recipe, _ in suggestions]
-            chosen = ", ".join(safe(self.catalog.ingredients[key]) for key in sorted(session.selected))
-            lines = ["Блюд только из выбранных продуктов не нашлось.",
-                     f"С учётом уже имеющихся: {chosen}.",
-                     "Вот ближайшие рецепты; для них также понадобятся:"]
-            for i, (recipe, missing) in enumerate(suggestions, 1):
-                names = [safe(self.catalog.ingredients[key]) for key in missing[:5]]
-                more = f" и ещё {len(missing) - 5}" if len(missing) > 5 else ""
-                lines.append(f"{i}. {safe(recipe.name)} — " + ", ".join(names) + more)
-            self.api.send(chat_id, "\n".join(lines), self._results_keyboard(session.results))
+            current = ("Блюд только из выбранных продуктов не нашлось. "
+                       "Вот ближайшие рецепты и что для них понадобится:\n"
+                       "Жирным — уже есть (включая специи, воду и масло).")
+            available = self.catalog.available_keys(session.selected)
+            for i, (recipe, _) in enumerate(suggestions, 1):
+                line = self._suggestion_line(i, recipe, available)
+                if len(current) + len(line) + 1 > MAX_TEXT:
+                    self.api.send(chat_id, current)
+                    current = line
+                else:
+                    current += "\n" + line
+            self.api.send(chat_id, current, self._results_keyboard(session.results))
             return
         self.api.send(chat_id, "Блюд с выбранными продуктами в этой категории "
                       "не нашлось. Добавьте продукты или выберите другую категорию.",
