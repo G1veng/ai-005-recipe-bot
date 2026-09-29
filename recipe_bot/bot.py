@@ -31,6 +31,7 @@ def keyboard(rows: list[list[tuple[str, str]]]) -> dict:
 class Session:
     selected: set[str] = field(default_factory=set)
     results: list[Recipe] = field(default_factory=list)
+    category: str | None = None
 
 
 class Bot:
@@ -60,13 +61,59 @@ class Bot:
             navigation.append(("▶", f"p:{page + 1}"))
         rows.append(navigation)
         rows.append([("Очистить", "clear"), ("Готово", "done")])
+        rows.append([("🏠 Домой", "home")])
         return keyboard(rows)
 
     def _categories_keyboard(self) -> dict:
         rows = []
         for index, category in enumerate(self.catalog.categories):
             rows.append([(CATEGORY_NAMES.get(category, category.capitalize()), f"c:{index}")])
+        rows.append([("⬅ Назад", "b:ingredients"), ("🏠 Домой", "home")])
         return keyboard(rows)
+
+    def _start(self, chat_id: int, user_id: int) -> None:
+        self.sessions[(chat_id, user_id)] = session = Session()
+        self.api.send(chat_id,
+            "Привет! Выберите продукты кнопками или напишите их названия через запятую. "
+            "Специи, вода и масло считаются доступными. Когда закончите, нажмите «Готово».\n"
+            "Количество продуктов пока не учитывается. Если чего-то не хватает, "
+            "покажу ближайшие рецепты и недостающие продукты.", self._ingredients_keyboard(session))
+
+    def _show_categories(self, chat_id: int, session: Session) -> None:
+        chosen = ", ".join(safe(self.catalog.ingredients[x]) for x in sorted(session.selected))
+        self.api.send(chat_id, "У вас есть: " + chosen + "\nКакое блюдо хотите?",
+                      self._categories_keyboard())
+
+    def _results_keyboard(self, recipes: list[Recipe]) -> dict:
+        rows = [[(recipe.name, f"r:{recipe.slug}")] for recipe in recipes]
+        rows.append([("⬅ Назад", "b:categories"), ("🏠 Домой", "home")])
+        return keyboard(rows)
+
+    def _show_results(self, chat_id: int, session: Session, category: str) -> None:
+        session.category = category
+        session.results = self.catalog.find(session.selected, category)[:5]
+        if session.results:
+            lines = ["Подходящие блюда:"]
+            for i, recipe in enumerate(session.results, 1):
+                minutes = recipe.prep_minutes + recipe.cook_minutes
+                lines.append(f"{i}. {safe(recipe.name)} — {minutes} мин")
+            self.api.send(chat_id, "\n".join(lines) + "\nНажмите на блюдо, чтобы увидеть рецепт.",
+                          self._results_keyboard(session.results))
+            return
+        suggestions = self.catalog.suggest(session.selected, category)[:5]
+        if suggestions:
+            session.results = [recipe for recipe, _ in suggestions]
+            lines = ["Блюд только из выбранных продуктов не нашлось. "
+                     "Вот ближайшие рецепты; для них понадобятся:"]
+            for i, (recipe, missing) in enumerate(suggestions, 1):
+                names = [safe(self.catalog.ingredients[key]) for key in missing[:5]]
+                more = f" и ещё {len(missing) - 5}" if len(missing) > 5 else ""
+                lines.append(f"{i}. {safe(recipe.name)} — " + ", ".join(names) + more)
+            self.api.send(chat_id, "\n".join(lines), self._results_keyboard(session.results))
+            return
+        self.api.send(chat_id, "Блюд с выбранными продуктами в этой категории "
+                      "не нашлось. Добавьте продукты или выберите другую категорию.",
+                      self._categories_keyboard())
 
     def handle(self, update: dict) -> None:
         if "message" in update:
@@ -76,12 +123,7 @@ class Bot:
             text = message.get("text", "").strip()
             session = self._session(chat_id, user_id)
             if text.startswith("/start") or text.startswith("/reset"):
-                self.sessions[(chat_id, user_id)] = session = Session()
-                self.api.send(chat_id,
-                    "Привет! Выберите продукты кнопками или напишите их названия через запятую. "
-                    "Специи, вода и масло считаются доступными. Когда закончите, нажмите «Готово».\n"
-                    "Количество продуктов пока не учитывается. Если чего-то не хватает, "
-                    "покажу ближайшие рецепты и недостающие продукты.", self._ingredients_keyboard(session))
+                self._start(chat_id, user_id)
             elif text.startswith("/"):
                 self.api.send(chat_id, "Неизвестная команда. Нажмите /start, чтобы начать подбор.")
             elif not text:
@@ -128,7 +170,20 @@ class Bot:
         parts = callback.get("data", "").split(":")
         action = parts[0]
         try:
-            if action == "i" and len(parts) == 3:
+            if action == "home":
+                self._start(chat_id, user_id)
+            elif action == "b" and len(parts) >= 2:
+                if parts[1] == "ingredients" and len(parts) == 2:
+                    self.api.send(chat_id, "Выберите продукты или нажмите «Готово».",
+                                  self._ingredients_keyboard(session))
+                elif parts[1] == "categories" and len(parts) == 2 and session.selected:
+                    self._show_categories(chat_id, session)
+                elif (parts[1] == "results" and len(parts) == 3 and session.selected
+                      and parts[2] in self.catalog.categories):
+                    self._show_results(chat_id, session, parts[2])
+                else:
+                    self.api.send(chat_id, "Кнопка устарела. Нажмите /start и повторите выбор.")
+            elif action == "i" and len(parts) == 3:
                 index, page = int(parts[1]), int(parts[2])
                 item_id = self.catalog.ingredient_ids[index]
                 if item_id in session.selected:
@@ -142,50 +197,29 @@ class Bot:
             elif action == "clear":
                 session.selected.clear()
                 session.results.clear()
+                session.category = None
                 self.api.send(chat_id, "Список очищен. Выберите продукты заново.",
                               self._ingredients_keyboard(session))
             elif action == "done":
                 if not session.selected:
                     self.api.send(chat_id, "Сначала выберите хотя бы один продукт.")
                 else:
-                    chosen = ", ".join(safe(self.catalog.ingredients[x]) for x in sorted(session.selected))
-                    self.api.send(chat_id, "У вас есть: " + chosen + "\nКакое блюдо хотите?",
-                                  self._categories_keyboard())
+                    self._show_categories(chat_id, session)
             elif action == "c" and len(parts) == 2:
                 category = self.catalog.categories[int(parts[1])]
                 if not session.selected:
                     self.api.send(chat_id, "Сначала выберите продукты через /start.")
                 else:
-                    session.results = self.catalog.find(session.selected, category)[:5]
-                    if not session.results:
-                        suggestions = self.catalog.suggest(session.selected, category)[:5]
-                        if suggestions:
-                            session.results = [recipe for recipe, _ in suggestions]
-                            lines = ["Блюд только из выбранных продуктов не нашлось. "
-                                     "Вот ближайшие рецепты; для них понадобятся:"]
-                            for i, (recipe, missing) in enumerate(suggestions, 1):
-                                names = [safe(self.catalog.ingredients[key]) for key in missing[:5]]
-                                more = f" и ещё {len(missing) - 5}" if len(missing) > 5 else ""
-                                lines.append(f"{i}. {safe(recipe.name)} — " + ", ".join(names) + more)
-                            rows = [[(recipe.name, f"r:{recipe.slug}")]
-                                    for recipe, _ in suggestions]
-                            self.api.send(chat_id, "\n".join(lines), keyboard(rows))
-                        else:
-                            self.api.send(chat_id, "Блюд с выбранными продуктами в этой категории "
-                                          "не нашлось. Добавьте продукты или выберите другую категорию.",
-                                          self._categories_keyboard())
-                    else:
-                        lines = ["Подходящие блюда:"]
-                        for i, recipe in enumerate(session.results, 1):
-                            minutes = recipe.prep_minutes + recipe.cook_minutes
-                            lines.append(f"{i}. {safe(recipe.name)} — {minutes} мин")
-                        rows = [[(recipe.name, f"r:{recipe.slug}")] for recipe in session.results]
-                        self.api.send(chat_id, "\n".join(lines) + "\nНажмите на блюдо, чтобы увидеть рецепт.",
-                                      keyboard(rows))
+                    self._show_results(chat_id, session, category)
             elif action == "r" and len(parts) == 2:
                 recipe = self.catalog.recipes_by_slug[parts[1]]
-                for chunk in recipe_messages(recipe):
+                chunks = recipe_messages(recipe)
+                for chunk in chunks[:-1]:
                     self.api.send(chat_id, chunk)
+                back = f"b:results:{recipe.category}" if session.selected else "b:ingredients"
+                self.api.send(chat_id, chunks[-1], keyboard([
+                    [("⬅ Назад", back), ("🏠 Домой", "home")]
+                ]))
             elif action != "noop":
                 self.api.send(chat_id, "Кнопка устарела. Нажмите /start и повторите выбор.")
         except (ValueError, IndexError, KeyError):
