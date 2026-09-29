@@ -70,6 +70,18 @@ class BotFlowTests(unittest.TestCase):
         self.bot.handle(callback(f"c:{category_index}"))
         self.assertIn("не нашлось", self.api.sent[-1][1])
 
+    def test_partial_match_shows_missing_products_and_recipe(self):
+        self.bot.handle(message("/start"))
+        self.bot.handle(message("Помидор"))
+        self.bot.handle(callback("done"))
+        category_index = self.catalog.categories.index("breakfast")
+        self.bot.handle(callback(f"c:{category_index}"))
+        self.assertIn("ближайшие рецепты", self.api.sent[-1][1])
+        self.assertIn("Тестовый омлет — Яйцо", self.api.sent[-1][1])
+        button = self.api.sent[-1][2]["inline_keyboard"][0][0]["callback_data"]
+        self.bot.handle(callback(button))
+        self.assertIn("Приготовление", self.api.sent[-1][1])
+
     def test_bad_input_and_callbacks(self):
         self.bot.handle(message("/unknown"))
         self.assertIn("Неизвестная команда", self.api.sent[-1][1])
