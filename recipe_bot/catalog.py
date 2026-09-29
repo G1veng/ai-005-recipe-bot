@@ -163,12 +163,17 @@ class Catalog:
                  if normalize(item_id.replace("_", "-")) == key]
         return by_id[0] if len(by_id) == 1 else None
 
-    def find(self, selected: set[str], category: str) -> list[Recipe]:
-        if category not in self.categories:
-            return []
+    @staticmethod
+    def available_keys(selected: set[str]) -> set[str]:
         available = set(selected)
         if "яйцо" in available:
             available.update({"яичные желтки", "яичные белки", "яичный желток", "яичный белок"})
+        return available
+
+    def find(self, selected: set[str], category: str) -> list[Recipe]:
+        if category not in self.categories:
+            return []
+        available = self.available_keys(selected)
         matches = [r for r in self.recipes if r.category == category and r.required_keys <= available]
         return sorted(matches, key=lambda r: normalize(r.name))
 
@@ -176,9 +181,7 @@ class Catalog:
         """Find recipes using selected products, ordered by fewest missing products."""
         if category not in self.categories:
             return []
-        available = set(selected)
-        if "яйцо" in available:
-            available.update({"яичные желтки", "яичные белки", "яичный желток", "яичный белок"})
+        available = self.available_keys(selected)
         candidates = []
         for recipe in self.recipes:
             if recipe.category != category:
