@@ -78,9 +78,13 @@ class BotFlowTests(unittest.TestCase):
         category_index = self.catalog.categories.index("breakfast")
         self.bot.handle(callback(f"c:{category_index}"))
         self.assertIn("ближайшие рецепты", self.api.sent[-1][1])
-        self.assertIn("С учётом уже имеющихся: Помидор.", self.api.sent[-1][1])
-        self.assertIn("для них также понадобятся", self.api.sent[-1][1])
-        self.assertIn("Тестовый омлет — Яйцо", self.api.sent[-1][1])
+        self.assertIn("Жирным — уже есть", self.api.sent[-1][1])
+        self.assertNotIn("С учётом уже имеющихся", self.api.sent[-1][1])
+        line = self.api.sent[-1][1].splitlines()[-1]
+        self.assertIn("Тестовый омлет — <b>Помидор</b>", line)
+        self.assertIn("<b>Растительное масло</b>", line)
+        self.assertIn("<b>Соль</b>", line)
+        self.assertTrue(line.endswith(", Яйцо"))
         button = self.api.sent[-1][2]["inline_keyboard"][0][0]["callback_data"]
         self.bot.handle(callback(button))
         self.assertIn("Приготовление", self.api.sent[-1][1])
