@@ -80,7 +80,8 @@ class Bot:
                 self.api.send(chat_id,
                     "Привет! Выберите продукты кнопками или напишите их названия через запятую. "
                     "Специи, вода и масло считаются доступными. Когда закончите, нажмите «Готово».\n"
-                    "Количество продуктов пока не учитывается.", self._ingredients_keyboard(session))
+                    "Количество продуктов пока не учитывается. Если чего-то не хватает, "
+                    "покажу ближайшие рецепты и недостающие продукты.", self._ingredients_keyboard(session))
             elif text.startswith("/"):
                 self.api.send(chat_id, "Неизвестная команда. Нажмите /start, чтобы начать подбор.")
             elif not text:
@@ -157,9 +158,22 @@ class Bot:
                 else:
                     session.results = self.catalog.find(session.selected, category)[:5]
                     if not session.results:
-                        self.api.send(chat_id, "Для этих продуктов блюд в выбранной категории не нашлось. "
-                                      "Добавьте продукты или выберите другую категорию.",
-                                      self._categories_keyboard())
+                        suggestions = self.catalog.suggest(session.selected, category)[:5]
+                        if suggestions:
+                            session.results = [recipe for recipe, _ in suggestions]
+                            lines = ["Блюд только из выбранных продуктов не нашлось. "
+                                     "Вот ближайшие рецепты; для них понадобятся:"]
+                            for i, (recipe, missing) in enumerate(suggestions, 1):
+                                names = [safe(self.catalog.ingredients[key]) for key in missing[:5]]
+                                more = f" и ещё {len(missing) - 5}" if len(missing) > 5 else ""
+                                lines.append(f"{i}. {safe(recipe.name)} — " + ", ".join(names) + more)
+                            rows = [[(recipe.name, f"r:{recipe.slug}")]
+                                    for recipe, _ in suggestions]
+                            self.api.send(chat_id, "\n".join(lines), keyboard(rows))
+                        else:
+                            self.api.send(chat_id, "Блюд с выбранными продуктами в этой категории "
+                                          "не нашлось. Добавьте продукты или выберите другую категорию.",
+                                          self._categories_keyboard())
                     else:
                         lines = ["Подходящие блюда:"]
                         for i, recipe in enumerate(session.results, 1):
