@@ -170,7 +170,7 @@ class Catalog:
         if "яйцо" in available:
             available.update({"яичные желтки", "яичные белки", "яичный желток", "яичный белок"})
         matches = [r for r in self.recipes if r.category == category and r.required_keys <= available]
-        return sorted(matches, key=lambda r: (len(r.required_keys), r.name.casefold()))
+        return sorted(matches, key=lambda r: normalize(r.name))
 
     def suggest(self, selected: set[str], category: str) -> list[tuple[Recipe, tuple[str, ...]]]:
         """Find recipes using selected products, ordered by fewest missing products."""
@@ -186,6 +186,6 @@ class Catalog:
             used = recipe.required_keys & available
             missing = recipe.required_keys - available
             if used and missing:
-                candidates.append((recipe, tuple(sorted(missing)), len(used)))
-        candidates.sort(key=lambda item: (len(item[1]), -item[2], item[0].name.casefold()))
-        return [(recipe, missing) for recipe, missing, _ in candidates]
+                candidates.append((recipe, tuple(sorted(missing))))
+        candidates.sort(key=lambda item: (len(item[1]), normalize(item[0].name)))
+        return candidates
