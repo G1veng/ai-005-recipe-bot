@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from recipe_bot.bot import Bot, recipe_messages
@@ -82,6 +83,39 @@ class BotFlowTests(unittest.TestCase):
         self.bot.handle(callback(button))
         self.assertIn("Приготовление", self.api.sent[-1][1])
 
+    def test_sort_by_missing_count_then_alphabet(self):
+        pasta = self.catalog.recipes_by_slug["test-pasta"]
+        egg = self.catalog.recipes_by_slug["test-omelet"].ingredients[0]
+        same = replace(pasta, slug="same", name="Бета")
+        more = replace(pasta, slug="more", name="Альфа",
+                       ingredients=pasta.ingredients + (egg,))
+        catalog = Catalog([pasta, same, more])
+        self.assertEqual([r.slug for r, _ in catalog.suggest({"помидоры"}, "main")],
+                         ["same", "test-pasta", "more"])
+        self.assertEqual([r.slug for r in catalog.find({"помидоры", "макароны", "яйцо"}, "main")],
+                         ["more", "same", "test-pasta"])
+
+    def test_back_preserves_selection_and_home_resets(self):
+        self.bot.handle(message("/start"))
+        self.bot.handle(message("Помидор"))
+        self.bot.handle(callback("done"))
+        self.bot.handle(callback("b:ingredients"))
+        self.assertIn("Выберите продукты", self.api.sent[-1][1])
+        self.assertEqual(self.bot._session(42, 7).selected, {"помидоры"})
+        self.bot.handle(callback("done"))
+        self.bot.handle(callback(f"c:{self.catalog.categories.index('breakfast')}"))
+        self.bot.handle(callback("r:test-omelet"))
+        self.assertEqual(self.api.sent[-1][2]["inline_keyboard"][0][0]["callback_data"],
+                         "b:results:breakfast")
+        self.bot.handle(callback("b:results:breakfast"))
+        self.assertIn("ближайшие рецепты", self.api.sent[-1][1])
+        self.bot.handle(callback("b:categories"))
+        self.assertIn("Какое блюдо", self.api.sent[-1][1])
+        self.bot.handle(callback("home"))
+        self.assertIn("Привет!", self.api.sent[-1][1])
+        self.assertEqual(self.bot._session(42, 7).selected, set())
+        self.assertIsNone(self.bot._session(42, 7).category)
+
     def test_bad_input_and_callbacks(self):
         self.bot.handle(message("/unknown"))
         self.assertIn("Неизвестная команда", self.api.sent[-1][1])
@@ -124,6 +158,16 @@ class BotFlowTests(unittest.TestCase):
         old_button = self.api.sent[-1][2]["inline_keyboard"][0][0]["callback_data"]
         self.bot.handle(callback(f"c:{self.catalog.categories.index('main')}"))
         self.bot.handle(callback(old_button))
+        self.assertIn("Тестовый омлет", self.api.sent[-1][1])
+        self.assertNotIn("Тестовая паста", self.api.sent[-1][1])
+        back_button = self.api.sent[-1][2]["inline_keyboard"][0][0]["callback_data"]
+        self.bot.handle(callback(back_button))
+        self.assertIn("Тестовый омлет", self.api.sent[-1][1])
+        self.assertNotIn("Тестовая паста", self.api.sent[-1][1])
+        self.bot.handle(callback(old_button))
+        back_button = self.api.sent[-1][2]["inline_keyboard"][0][0]["callback_data"]
+        self.bot.handle(callback(f"c:{self.catalog.categories.index('main')}"))
+        self.bot.handle(callback(back_button))
         self.assertIn("Тестовый омлет", self.api.sent[-1][1])
         self.assertNotIn("Тестовая паста", self.api.sent[-1][1])
 
