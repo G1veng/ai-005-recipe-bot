@@ -103,8 +103,10 @@ class Bot:
         suggestions = self.catalog.suggest(session.selected, category)[:5]
         if suggestions:
             session.results = [recipe for recipe, _ in suggestions]
-            lines = ["Блюд только из выбранных продуктов не нашлось. "
-                     "Вот ближайшие рецепты; для них понадобятся:"]
+            chosen = ", ".join(safe(self.catalog.ingredients[key]) for key in sorted(session.selected))
+            lines = ["Блюд только из выбранных продуктов не нашлось.",
+                     f"С учётом уже имеющихся: {chosen}.",
+                     "Вот ближайшие рецепты; для них также понадобятся:"]
             for i, (recipe, missing) in enumerate(suggestions, 1):
                 names = [safe(self.catalog.ingredients[key]) for key in missing[:5]]
                 more = f" и ещё {len(missing) - 5}" if len(missing) > 5 else ""
