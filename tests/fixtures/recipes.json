@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "license": "CC BY-SA 4.0",
+  "recipes": [
+    {
+      "slug": "test-omelet", "country": "RU", "name": {"ru": "Тестовый омлет"},
+      "summary": {"ru": "Простой тестовый завтрак."}, "category": "breakfast",
+      "difficulty": "easy", "baseServings": 1, "prepMinutes": 2, "cookMinutes": 5,
+      "nutritionPerServing": {"calories": 100, "protein": 8, "fat": 6, "carbs": 2},
+      "ingredients": [
+        {"id": "egg", "name": {"ru": "Яйцо"}, "quantity": 2, "unit": "piece"},
+        {"id": "tomato", "name": {"ru": "Помидор"}, "quantity": 1, "unit": "piece", "note": {"ru": "нарезать кубиками"}},
+        {"id": "salt", "name": {"ru": "Соль"}, "quantity": null, "unit": "toTaste"},
+        {"id": "oil", "name": {"ru": "Растительное масло"}, "quantity": 5, "unit": "ml"}
+      ],
+      "steps": [{"text": {"ru": "Смешайте продукты и приготовьте."}, "minutes": 5}]
+    },
+    {
+      "slug": "test-soup", "country": "RU", "name": {"ru": "Тестовый суп"},
+      "summary": {"ru": "Суп для проверки."}, "category": "soup",
+      "difficulty": "easy", "baseServings": 2, "prepMinutes": 3, "cookMinutes": 10,
+      "nutritionPerServing": {"calories": 90, "protein": 3, "fat": 2, "carbs": 12},
+      "ingredients": [
+        {"id": "tomato", "name": {"ru": "Помидор"}, "quantity": 2, "unit": "piece"},
+        {"id": "water", "name": {"ru": "Вода"}, "quantity": 1, "unit": "l"}
+      ],
+      "steps": [{"text": {"ru": "Сварите помидор в воде."}, "minutes": 10}]
+    },
+    {
+      "slug": "test-pasta", "country": "IT", "name": {"ru": "Тестовая паста"},
+      "summary": {"ru": "Паста для проверки."}, "category": "main",
+      "difficulty": "easy", "baseServings": 2, "prepMinutes": 3, "cookMinutes": 12,
+      "nutritionPerServing": {"calories": 300, "protein": 10, "fat": 8, "carbs": 45},
+      "ingredients": [
+        {"id": "pasta", "name": {"ru": "Макароны"}, "quantity": 200, "unit": "g"},
+        {"id": "tomato", "name": {"ru": "Помидор"}, "quantity": 1, "unit": "piece"}
+      ],
+      "steps": [{"text": {"ru": "Отварите макароны и добавьте помидор."}, "minutes": 12}]
+    }
+  ]
+}
